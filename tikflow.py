@@ -14,7 +14,7 @@ SWIPE_COMMAND = ["adb", "shell", "input", "swipe", "540", "1800", "540", "400", 
 class TikFlow:
     def __init__(self):
         self._logs = deque(maxlen=100)
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._stop_event = threading.Event()
         self._thread = None
         self.adb_target = DEFAULT_ADB_TARGET
@@ -46,11 +46,13 @@ class TikFlow:
 
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
+                self.log("Start ignored because TikFlow is already running.")
                 return False
 
             self.adb_target = adb_target
             self.swipe_interval = swipe_interval
             self._stop_event.clear()
+            self.log(f"Start requested. Target: {self.adb_target}, interval: {self.swipe_interval}s.")
             self._thread = threading.Thread(target=self._run, name="tikflow-worker", daemon=True)
             self._thread.start()
             return True
@@ -59,7 +61,9 @@ class TikFlow:
         with self._lock:
             thread = self._thread
             if thread is None or not thread.is_alive():
+                self.log("Stop ignored because TikFlow is already stopped.")
                 return False
+            self.log("Stop requested.")
             self._stop_event.set()
 
         thread.join(timeout=3)
@@ -102,7 +106,7 @@ class TikFlow:
                     stderr = error.stderr.decode(errors="replace").strip() if error.stderr else ""
                     self.log(f"Swipe failed: {stderr or error}")
         except FileNotFoundError:
-            self.log("ADB command not found. Make sure adb is installed and available in PATH.")
+            self.log("ADB command not found. Install Android platform-tools or add adb.exe to PATH.")
         except subprocess.CalledProcessError as error:
             stderr = error.stderr.decode(errors="replace").strip() if error.stderr else ""
             self.log(f"ADB command failed: {stderr or error}")
