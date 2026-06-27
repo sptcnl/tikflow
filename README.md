@@ -1,4 +1,4 @@
-﻿# TikFlow
+# TikFlow
 
 TikFlow는 ADB로 Android 기기에 연결해서 일정 간격마다 TikTok 화면을 위로 스와이프하는 자동화 도구입니다. 이제 Flask 웹 GUI에서 시작, 중지, 스와이프 간격, ADB 대상 주소를 제어할 수 있습니다.
 
@@ -40,7 +40,7 @@ http://localhost:8080
 
 웹 화면에서 다음 값을 설정한 뒤 `Start`를 누릅니다.
 
-- `ADB target`: 기본값은 `192.168.0.21:39293`
+- `ADB target`: 기본값은 `192.168.0.20:35473`
 - `Interval`: 5~60초, 기본값은 `20`초
 
 중지하려면 웹 화면에서 `Stop`을 누릅니다.
