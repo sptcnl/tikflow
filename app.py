@@ -289,7 +289,7 @@ PAGE = """
       }
 
       const logs = data.logs || [];
-      logsEl.textContent = logs.length ? logs.join('\n') : 'No logs yet.';
+      logsEl.textContent = logs.length ? logs.join('\\n') : 'No logs yet.';
       logsEl.scrollTop = logsEl.scrollHeight;
     }
 
