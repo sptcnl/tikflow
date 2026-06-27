@@ -8,12 +8,12 @@ import numpy as np
 from PIL import Image
 
 
-ADB_TARGET = "localhost:5555"
+ADB_TARGET = "192.168.0.21:39293"
 CHECK_INTERVAL_SECONDS = 0.5
-CROP_BOX = (0, 0, 200, 200)
+CROP_BOX = (30, 260, 120, 360)  # 코인 아이콘 영역
 DIFF_THRESHOLD = 3.0
 STABLE_CHECKS_BEFORE_SWIPE = 2
-SWIPE_COMMAND = ["adb", "shell", "input", "swipe", "540", "1200", "540", "300", "300"]
+SWIPE_COMMAND = ["adb", "shell", "input", "swipe", "540", "1800", "540", "400", "300"]
 
 
 def log(message):
