@@ -1,14 +1,19 @@
+﻿import shutil
 import subprocess
 import threading
 from collections import deque
 from datetime import datetime
+from pathlib import Path
 
 
-DEFAULT_ADB_TARGET = "192.168.0.21:39293"
+DEFAULT_ADB_TARGET = "192.168.0.20:35473"
 DEFAULT_SWIPE_INTERVAL = 20
 MIN_SWIPE_INTERVAL = 5
 MAX_SWIPE_INTERVAL = 60
-SWIPE_COMMAND = ["adb", "shell", "input", "swipe", "540", "1800", "540", "400", "300"]
+ADB_COMMAND_TIMEOUT = 15
+LOCAL_ADB = Path(__file__).with_name("platform-tools") / "adb.exe"
+ADB_COMMAND = str(LOCAL_ADB) if LOCAL_ADB.exists() else (shutil.which("adb") or "adb")
+SWIPE_COMMAND = [ADB_COMMAND, "shell", "input", "swipe", "540", "1800", "540", "400", "300"]
 
 
 class TikFlow:
@@ -81,11 +86,11 @@ class TikFlow:
         }
 
     def _run_adb_command(self, command):
-        return subprocess.run(command, capture_output=True, check=True)
+        return subprocess.run(command, capture_output=True, check=True, timeout=ADB_COMMAND_TIMEOUT)
 
     def _connect_adb(self):
         self.log(f"Connecting to ADB at {self.adb_target}")
-        result = self._run_adb_command(["adb", "connect", self.adb_target])
+        result = self._run_adb_command([ADB_COMMAND, "connect", self.adb_target])
         output = result.stdout.decode(errors="replace").strip()
         if output:
             self.log(output)
@@ -106,7 +111,9 @@ class TikFlow:
                     stderr = error.stderr.decode(errors="replace").strip() if error.stderr else ""
                     self.log(f"Swipe failed: {stderr or error}")
         except FileNotFoundError:
-            self.log("ADB command not found. Install Android platform-tools or add adb.exe to PATH.")
+            self.log("ADB command not found. Install Android platform-tools, add adb.exe to PATH, or place it in platform-tools\\adb.exe.")
+        except subprocess.TimeoutExpired:
+            self.log(f"ADB command timed out after {ADB_COMMAND_TIMEOUT}s.")
         except subprocess.CalledProcessError as error:
             stderr = error.stderr.decode(errors="replace").strip() if error.stderr else ""
             self.log(f"ADB command failed: {stderr or error}")
