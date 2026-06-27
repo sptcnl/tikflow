@@ -45,6 +45,46 @@ http://localhost:8080
 
 중지하려면 웹 화면에서 `Stop`을 누릅니다.
 
+
+## Linux 노트북 자동 실행
+
+Linux 노트북에서 로그인 시 자동으로 `python3 app.py`를 실행하고 브라우저에 웹 GUI를 띄우려면 아래 명령을 한 번 실행합니다.
+
+```sh
+chmod +x scripts/install-linux-autostart.sh
+./scripts/install-linux-autostart.sh
+```
+
+설치 후 동작은 다음과 같습니다.
+
+- `systemd --user`가 `tikflow.service`로 Flask 서버를 실행합니다.
+- 데스크톱 로그인 시 `http://localhost:8080`이 기본 브라우저로 자동으로 열립니다.
+
+서비스 상태를 확인합니다.
+
+```sh
+systemctl --user status tikflow.service
+```
+
+로그를 보려면 아래 명령을 사용합니다.
+
+```sh
+journalctl --user -u tikflow.service -f
+```
+
+로그인 전 부팅 직후에도 서버가 실행되게 하려면 Linux 노트북에서 한 번 더 실행합니다. 브라우저 창은 그래픽 데스크톱 로그인 후 열립니다.
+
+```sh
+sudo loginctl enable-linger "$USER"
+```
+
+자동 실행을 제거하려면 아래 명령을 실행합니다.
+
+```sh
+chmod +x scripts/uninstall-linux-autostart.sh
+./scripts/uninstall-linux-autostart.sh
+```
+
 ## CLI 실행
 
 웹 GUI 없이 기존 방식처럼 직접 실행할 수도 있습니다.
