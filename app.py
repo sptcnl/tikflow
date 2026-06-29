@@ -135,7 +135,7 @@ PAGE = """
 
     .actions {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1fr 1fr 1fr;
       gap: 10px;
     }
 
@@ -155,6 +155,7 @@ PAGE = """
     }
 
     #startBtn { background: var(--accent); }
+    #connectBtn { background: var(--warning); }
     #stopBtn { background: var(--danger); color: #fff; }
 
     .message {
@@ -220,6 +221,7 @@ PAGE = """
         </div>
         <div class="actions">
           <button id="startBtn" type="button">Start</button>
+          <button id="connectBtn" type="button">Reconnect</button>
           <button id="stopBtn" type="button">Stop</button>
         </div>
         <div>
@@ -248,6 +250,7 @@ PAGE = """
     const intervalInput = document.getElementById('intervalInput');
     const intervalLabel = document.getElementById('intervalLabel');
     const startBtn = document.getElementById('startBtn');
+    const connectBtn = document.getElementById('connectBtn');
     const stopBtn = document.getElementById('stopBtn');
     const statusEl = document.getElementById('status');
     const messageEl = document.getElementById('message');
@@ -278,14 +281,16 @@ PAGE = """
       statusEl.classList.toggle('running', running);
       statusEl.querySelector('span:last-child').textContent = running ? 'Running' : 'Stopped';
       startBtn.disabled = running;
+      connectBtn.disabled = false;
       stopBtn.disabled = !running;
-      adbTarget.disabled = running;
+      adbTarget.disabled = false;
       intervalRange.disabled = running;
       intervalInput.disabled = running;
 
-      if (running) {
-        if (data.adb_target) adbTarget.value = data.adb_target;
-        if (data.interval) setIntervalValue(data.interval);
+      if (data.adb_target && document.activeElement !== adbTarget) adbTarget.value = data.adb_target;
+
+      if (running && data.interval) {
+        setIntervalValue(data.interval);
       }
 
       const logs = data.logs || [];
@@ -319,6 +324,10 @@ PAGE = """
         adb_target: adbTarget.value,
         interval: clampInterval(intervalInput.value)
       });
+    });
+
+    connectBtn.addEventListener('click', () => {
+      postJson('/api/connect', { adb_target: adbTarget.value });
     });
 
     stopBtn.addEventListener('click', () => postJson('/api/stop'));
@@ -362,6 +371,27 @@ def start():
     return jsonify(runner.status())
 
 
+@app.post("/api/connect")
+def connect():
+    data = request.get_json(silent=True) or {}
+    try:
+        runner.connect(adb_target=data.get("adb_target", DEFAULT_ADB_TARGET))
+    except ValueError as error:
+        response = runner.status()
+        response["error"] = str(error)
+        return jsonify(response), 400
+    except FileNotFoundError:
+        response = runner.status()
+        response["error"] = "ADB command not found. Install Android platform-tools, add adb.exe to PATH, or place it in platform-tools\\adb.exe."
+        return jsonify(response), 500
+    except Exception as error:
+        response = runner.status()
+        response["error"] = str(error)
+        return jsonify(response), 500
+
+    return jsonify(runner.status())
+
+
 @app.post("/api/stop")
 def stop():
     runner.stop()
@@ -370,3 +400,4 @@ def stop():
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=8080, threaded=True)
+

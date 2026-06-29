@@ -20,6 +20,7 @@ class TikFlow:
     def __init__(self):
         self._logs = deque(maxlen=100)
         self._lock = threading.RLock()
+        self._adb_lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread = None
         self.adb_target = DEFAULT_ADB_TARGET
@@ -85,8 +86,19 @@ class TikFlow:
             "logs": self.get_logs(),
         }
 
+    def connect(self, adb_target=None):
+        adb_target = (adb_target or self.adb_target or DEFAULT_ADB_TARGET).strip()
+        if not adb_target:
+            raise ValueError("ADB target is required.")
+
+        with self._lock:
+            self.adb_target = adb_target
+
+        self._connect_adb()
+
     def _run_adb_command(self, command):
-        return subprocess.run(command, capture_output=True, check=True, timeout=ADB_COMMAND_TIMEOUT)
+        with self._adb_lock:
+            return subprocess.run(command, capture_output=True, check=True, timeout=ADB_COMMAND_TIMEOUT)
 
     def _connect_adb(self):
         self.log(f"Connecting to ADB at {self.adb_target}")
