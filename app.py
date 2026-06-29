@@ -1,6 +1,6 @@
 from flask import Flask, jsonify, render_template_string, request
 
-from tikflow import DEFAULT_ADB_TARGET, DEFAULT_ADB_TARGETS, DEFAULT_SWIPE_INTERVAL, TikFlow
+from tikflow import DEFAULT_ADB_TARGET, DEFAULT_SWIPE_INTERVAL, TikFlow
 
 
 app = Flask(__name__)
@@ -295,7 +295,7 @@ PAGE = """
       intervalRange.disabled = running;
       intervalInput.disabled = running;
 
-      const targetText = Array.isArray(data.adb_targets) ? data.adb_targets.join('\\n') : data.adb_target;
+      const targetText = Array.isArray(data.adb_devices) ? data.adb_devices.map((device) => device.name ? `${device.name}=${device.target}` : device.target).join('\\n') : data.adb_target;
       if (targetText && document.activeElement !== adbTargets) adbTargets.value = targetText;
 
       if (running && data.interval) {
@@ -352,10 +352,11 @@ PAGE = """
 
 @app.get("/")
 def index():
+    state = runner.status()
     return render_template_string(
         PAGE,
-        adb_targets="\n".join(DEFAULT_ADB_TARGETS),
-        interval=DEFAULT_SWIPE_INTERVAL,
+        adb_targets=state["adb_target"],
+        interval=state["interval"],
     )
 
 
