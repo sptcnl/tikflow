@@ -110,7 +110,7 @@ PAGE = """
       font-weight: 700;
     }
 
-    textarea, input[type="number"] {
+    input[type="text"], input[type="number"] {
       width: 100%;
       min-height: 42px;
       border: 1px solid var(--border);
@@ -122,15 +122,34 @@ PAGE = """
       outline: none;
     }
 
-    textarea {
-      min-height: 92px;
-      resize: vertical;
-      line-height: 1.4;
-      padding-top: 10px;
-      padding-bottom: 10px;
+    input:focus { border-color: #5b6474; }
+
+    .device-panel {
+      display: grid;
+      gap: 10px;
     }
 
-    textarea:focus, input:focus { border-color: #5b6474; }
+    .device-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .device-header label { margin-bottom: 0; }
+
+    .device-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .device-row {
+      display: grid;
+      grid-template-columns: minmax(120px, 0.45fr) minmax(180px, 1fr) 42px;
+      gap: 10px;
+      align-items: center;
+    }
+
 
     .interval-row {
       display: grid;
@@ -165,6 +184,7 @@ PAGE = """
     #startBtn { background: var(--accent); }
     #connectBtn { background: var(--warning); }
     #stopBtn { background: var(--danger); color: #fff; }
+    #addDeviceBtn, .device-remove { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
 
     .message {
       min-height: 20px;
@@ -210,6 +230,7 @@ PAGE = """
       header { align-items: flex-start; flex-direction: column; }
       .controls { grid-template-columns: 1fr; }
       .actions { grid-template-columns: 1fr; }
+      .device-row { grid-template-columns: 1fr; }
       pre { height: 360px; }
     }
   </style>
@@ -223,9 +244,12 @@ PAGE = """
 
     <section>
       <div class="controls">
-        <div>
-          <label for="adbTargets">ADB targets</label>
-          <textarea id="adbTargets" autocomplete="off" spellcheck="false">{{ adb_targets }}</textarea>
+        <div class="device-panel">
+          <div class="device-header">
+            <label>ADB targets</label>
+            <button id="addDeviceBtn" type="button">Add</button>
+          </div>
+          <div id="deviceRows" class="device-list"></div>
         </div>
         <div class="actions">
           <button id="startBtn" type="button">Start</button>
@@ -253,7 +277,8 @@ PAGE = """
   </main>
 
   <script>
-    const adbTargets = document.getElementById('adbTargets');
+    const deviceRows = document.getElementById('deviceRows');
+    const addDeviceBtn = document.getElementById('addDeviceBtn');
     const intervalRange = document.getElementById('intervalRange');
     const intervalInput = document.getElementById('intervalInput');
     const intervalLabel = document.getElementById('intervalLabel');
@@ -277,8 +302,69 @@ PAGE = """
       intervalLabel.textContent = next;
     }
 
+    function createDeviceRow(device) {
+      const row = document.createElement('div');
+      row.className = 'device-row';
+
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.className = 'device-name';
+      nameInput.placeholder = 'Name';
+      nameInput.autocomplete = 'off';
+      nameInput.value = device?.name || '';
+
+      const targetInput = document.createElement('input');
+      targetInput.type = 'text';
+      targetInput.className = 'device-target';
+      targetInput.placeholder = 'IP:port';
+      targetInput.autocomplete = 'off';
+      targetInput.value = device?.target || '';
+
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'device-remove';
+      removeBtn.textContent = 'X';
+      removeBtn.addEventListener('click', () => {
+        row.remove();
+        if (!deviceRows.children.length) addDeviceRow();
+      });
+
+      row.append(nameInput, targetInput, removeBtn);
+      return row;
+    }
+
+    function addDeviceRow(device) {
+      deviceRows.appendChild(createDeviceRow(device || {}));
+    }
+
+    function parseLegacyDevices(text) {
+      return String(text || '').split('\n').map((line) => {
+        const trimmed = line.trim();
+        if (!trimmed) return null;
+        if (trimmed.includes('=')) {
+          const [name, ...targetParts] = trimmed.split('=');
+          return { name: name.trim(), target: targetParts.join('=').trim() };
+        }
+        return { name: '', target: trimmed };
+      }).filter((device) => device && device.target);
+    }
+
+    function setDeviceRows(devices) {
+      const nextDevices = Array.isArray(devices) && devices.length ? devices : [{}];
+      deviceRows.replaceChildren();
+      nextDevices.forEach(addDeviceRow);
+    }
+
+    function collectDevices() {
+      return Array.from(deviceRows.querySelectorAll('.device-row')).map((row) => ({
+        name: row.querySelector('.device-name').value.trim(),
+        target: row.querySelector('.device-target').value.trim()
+      })).filter((device) => device.target);
+    }
+
     intervalRange.addEventListener('input', () => setIntervalValue(intervalRange.value));
     intervalInput.addEventListener('input', () => setIntervalValue(intervalInput.value));
+    addDeviceBtn.addEventListener('click', () => addDeviceRow());
 
     function setMessage(text) {
       messageEl.textContent = text || '';
@@ -291,19 +377,22 @@ PAGE = """
       startBtn.disabled = running;
       connectBtn.disabled = false;
       stopBtn.disabled = !running;
-      adbTargets.disabled = false;
+      addDeviceBtn.disabled = false;
+      deviceRows.querySelectorAll('input, button').forEach((element) => { element.disabled = false; });
       intervalRange.disabled = running;
       intervalInput.disabled = running;
 
-      const targetText = Array.isArray(data.adb_devices) ? data.adb_devices.map((device) => device.name ? `${device.name}=${device.target}` : device.target).join('\\n') : data.adb_target;
-      if (targetText && document.activeElement !== adbTargets) adbTargets.value = targetText;
+      if (!deviceRows.contains(document.activeElement)) {
+        const devices = Array.isArray(data.adb_devices) ? data.adb_devices : parseLegacyDevices(data.adb_target);
+        setDeviceRows(devices);
+      }
 
       if (running && data.interval) {
         setIntervalValue(data.interval);
       }
 
       const logs = data.logs || [];
-      logsEl.textContent = logs.length ? logs.join('\\n') : 'No logs yet.';
+      logsEl.textContent = logs.length ? logs.join('\n') : 'No logs yet.';
       logsEl.scrollTop = logsEl.scrollHeight;
     }
 
@@ -330,17 +419,18 @@ PAGE = """
 
     startBtn.addEventListener('click', () => {
       postJson('/api/start', {
-        adb_targets: adbTargets.value,
+        adb_devices: collectDevices(),
         interval: clampInterval(intervalInput.value)
       });
     });
 
     connectBtn.addEventListener('click', () => {
-      postJson('/api/connect', { adb_targets: adbTargets.value });
+      postJson('/api/connect', { adb_devices: collectDevices() });
     });
 
     stopBtn.addEventListener('click', () => postJson('/api/stop'));
 
+    setDeviceRows(parseLegacyDevices({{ adb_targets|tojson }}));
     setIntervalValue(intervalInput.value);
     fetchStatus();
     setInterval(fetchStatus, 2000);
@@ -371,7 +461,7 @@ def start():
     try:
         runner.start(
             adb_target=data.get("adb_target", DEFAULT_ADB_TARGET),
-            adb_targets=data.get("adb_targets"),
+            adb_targets=data.get("adb_devices", data.get("adb_targets")),
             swipe_interval=data.get("interval", DEFAULT_SWIPE_INTERVAL),
         )
     except ValueError as error:
@@ -386,7 +476,7 @@ def start():
 def connect():
     data = request.get_json(silent=True) or {}
     try:
-        runner.connect(adb_target=data.get("adb_target", DEFAULT_ADB_TARGET), adb_targets=data.get("adb_targets"))
+        runner.connect(adb_target=data.get("adb_target", DEFAULT_ADB_TARGET), adb_targets=data.get("adb_devices", data.get("adb_targets")))
     except ValueError as error:
         response = runner.status()
         response["error"] = str(error)
