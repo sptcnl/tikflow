@@ -40,7 +40,7 @@ http://localhost:8080
 
 웹 화면에서 다음 값을 설정한 뒤 `Start`를 누릅니다.
 
-- `ADB target`: 기본값은 `192.168.0.20:35473`
+- `ADB targets`: 기본값은 `192.168.0.20:35473`. 여러 폰은 한 줄에 하나씩 `IP:포트`를 입력합니다.
 - `Interval`: 5~60초, 기본값은 `20`초
 
 중지하려면 웹 화면에서 `Stop`을 누릅니다.
@@ -99,11 +99,11 @@ python tikflow.py
 
 - `app.py`가 Flask 서버를 `http://localhost:8080`에서 실행합니다.
 - 웹 UI에서 `Start`를 누르면 `tikflow.py`의 core runner가 background thread로 시작됩니다.
-- 시작 시 `adb connect <ADB target>`으로 기기에 연결합니다.
-- 설정한 interval마다 아래 ADB 명령을 실행합니다.
+- 시작 시 각 `ADB targets` 항목에 대해 `adb connect <target>`으로 기기에 연결합니다.
+- 설정한 interval마다 각 target에 대해 아래 ADB 명령을 실행합니다.
 
 ```sh
-adb shell input swipe 540 1800 540 400 300
+adb -s <target> shell input swipe 540 1800 540 400 300
 ```
 
 - 로그는 메모리에 최근 100줄만 저장됩니다.
@@ -120,3 +120,4 @@ adb shell input swipe 540 1800 540 400 300
 - `GET /api/status`: 실행 상태, 설정값, 로그 조회
 - `POST /api/start`: TikFlow 시작
 - `POST /api/stop`: TikFlow 중지
+

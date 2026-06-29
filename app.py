@@ -1,6 +1,6 @@
 from flask import Flask, jsonify, render_template_string, request
 
-from tikflow import DEFAULT_ADB_TARGET, DEFAULT_SWIPE_INTERVAL, TikFlow
+from tikflow import DEFAULT_ADB_TARGET, DEFAULT_ADB_TARGETS, DEFAULT_SWIPE_INTERVAL, TikFlow
 
 
 app = Flask(__name__)
@@ -110,9 +110,9 @@ PAGE = """
       font-weight: 700;
     }
 
-    input[type="text"], input[type="number"] {
+    textarea, input[type="number"] {
       width: 100%;
-      height: 42px;
+      min-height: 42px;
       border: 1px solid var(--border);
       border-radius: 8px;
       background: var(--panel-2);
@@ -122,7 +122,15 @@ PAGE = """
       outline: none;
     }
 
-    input:focus { border-color: #5b6474; }
+    textarea {
+      min-height: 92px;
+      resize: vertical;
+      line-height: 1.4;
+      padding-top: 10px;
+      padding-bottom: 10px;
+    }
+
+    textarea:focus, input:focus { border-color: #5b6474; }
 
     .interval-row {
       display: grid;
@@ -140,7 +148,7 @@ PAGE = """
     }
 
     button {
-      height: 42px;
+      min-height: 42px;
       border: 0;
       border-radius: 8px;
       color: #08110c;
@@ -216,8 +224,8 @@ PAGE = """
     <section>
       <div class="controls">
         <div>
-          <label for="adbTarget">ADB target</label>
-          <input id="adbTarget" type="text" value="{{ adb_target }}" autocomplete="off">
+          <label for="adbTargets">ADB targets</label>
+          <textarea id="adbTargets" autocomplete="off" spellcheck="false">{{ adb_targets }}</textarea>
         </div>
         <div class="actions">
           <button id="startBtn" type="button">Start</button>
@@ -245,7 +253,7 @@ PAGE = """
   </main>
 
   <script>
-    const adbTarget = document.getElementById('adbTarget');
+    const adbTargets = document.getElementById('adbTargets');
     const intervalRange = document.getElementById('intervalRange');
     const intervalInput = document.getElementById('intervalInput');
     const intervalLabel = document.getElementById('intervalLabel');
@@ -283,11 +291,12 @@ PAGE = """
       startBtn.disabled = running;
       connectBtn.disabled = false;
       stopBtn.disabled = !running;
-      adbTarget.disabled = false;
+      adbTargets.disabled = false;
       intervalRange.disabled = running;
       intervalInput.disabled = running;
 
-      if (data.adb_target && document.activeElement !== adbTarget) adbTarget.value = data.adb_target;
+      const targetText = Array.isArray(data.adb_targets) ? data.adb_targets.join('\\n') : data.adb_target;
+      if (targetText && document.activeElement !== adbTargets) adbTargets.value = targetText;
 
       if (running && data.interval) {
         setIntervalValue(data.interval);
@@ -321,13 +330,13 @@ PAGE = """
 
     startBtn.addEventListener('click', () => {
       postJson('/api/start', {
-        adb_target: adbTarget.value,
+        adb_targets: adbTargets.value,
         interval: clampInterval(intervalInput.value)
       });
     });
 
     connectBtn.addEventListener('click', () => {
-      postJson('/api/connect', { adb_target: adbTarget.value });
+      postJson('/api/connect', { adb_targets: adbTargets.value });
     });
 
     stopBtn.addEventListener('click', () => postJson('/api/stop'));
@@ -345,7 +354,7 @@ PAGE = """
 def index():
     return render_template_string(
         PAGE,
-        adb_target=DEFAULT_ADB_TARGET,
+        adb_targets="\n".join(DEFAULT_ADB_TARGETS),
         interval=DEFAULT_SWIPE_INTERVAL,
     )
 
@@ -361,6 +370,7 @@ def start():
     try:
         runner.start(
             adb_target=data.get("adb_target", DEFAULT_ADB_TARGET),
+            adb_targets=data.get("adb_targets"),
             swipe_interval=data.get("interval", DEFAULT_SWIPE_INTERVAL),
         )
     except ValueError as error:
@@ -375,7 +385,7 @@ def start():
 def connect():
     data = request.get_json(silent=True) or {}
     try:
-        runner.connect(adb_target=data.get("adb_target", DEFAULT_ADB_TARGET))
+        runner.connect(adb_target=data.get("adb_target", DEFAULT_ADB_TARGET), adb_targets=data.get("adb_targets"))
     except ValueError as error:
         response = runner.status()
         response["error"] = str(error)

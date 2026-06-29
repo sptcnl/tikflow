@@ -1,4 +1,5 @@
-﻿import shutil
+import re
+import shutil
 import subprocess
 import threading
 from collections import deque
@@ -7,13 +8,34 @@ from pathlib import Path
 
 
 DEFAULT_ADB_TARGET = "192.168.0.20:35473"
+DEFAULT_ADB_TARGETS = [DEFAULT_ADB_TARGET]
 DEFAULT_SWIPE_INTERVAL = 20
 MIN_SWIPE_INTERVAL = 5
 MAX_SWIPE_INTERVAL = 60
 ADB_COMMAND_TIMEOUT = 15
 LOCAL_ADB = Path(__file__).with_name("platform-tools") / "adb.exe"
 ADB_COMMAND = str(LOCAL_ADB) if LOCAL_ADB.exists() else (shutil.which("adb") or "adb")
-SWIPE_COMMAND = [ADB_COMMAND, "shell", "input", "swipe", "540", "1800", "540", "400", "300"]
+SWIPE_ARGS = ["shell", "input", "swipe", "540", "1800", "540", "400", "300"]
+
+
+def parse_adb_targets(value):
+    if value is None:
+        return list(DEFAULT_ADB_TARGETS)
+    if isinstance(value, str):
+        candidates = re.split(r"[\s,]+", value.strip())
+    else:
+        candidates = []
+        for item in value:
+            candidates.extend(re.split(r"[\s,]+", str(item).strip()))
+
+    targets = []
+    seen = set()
+    for target in candidates:
+        target = target.strip()
+        if target and target not in seen:
+            seen.add(target)
+            targets.append(target)
+    return targets
 
 
 class TikFlow:
@@ -23,8 +45,12 @@ class TikFlow:
         self._adb_lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread = None
-        self.adb_target = DEFAULT_ADB_TARGET
+        self.adb_targets = list(DEFAULT_ADB_TARGETS)
         self.swipe_interval = DEFAULT_SWIPE_INTERVAL
+
+    @property
+    def adb_target(self):
+        return "\n".join(self.adb_targets)
 
     def log(self, message):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -41,24 +67,24 @@ class TikFlow:
         with self._lock:
             return self._thread is not None and self._thread.is_alive()
 
-    def start(self, adb_target=DEFAULT_ADB_TARGET, swipe_interval=DEFAULT_SWIPE_INTERVAL):
+    def start(self, adb_target=DEFAULT_ADB_TARGET, adb_targets=None, swipe_interval=DEFAULT_SWIPE_INTERVAL):
         swipe_interval = int(swipe_interval)
         if swipe_interval < MIN_SWIPE_INTERVAL or swipe_interval > MAX_SWIPE_INTERVAL:
             raise ValueError(f"Interval must be between {MIN_SWIPE_INTERVAL} and {MAX_SWIPE_INTERVAL} seconds.")
 
-        adb_target = (adb_target or DEFAULT_ADB_TARGET).strip()
-        if not adb_target:
-            raise ValueError("ADB target is required.")
+        targets = parse_adb_targets(adb_targets if adb_targets is not None else adb_target)
+        if not targets:
+            raise ValueError("At least one ADB target is required.")
 
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 self.log("Start ignored because TikFlow is already running.")
                 return False
 
-            self.adb_target = adb_target
+            self.adb_targets = targets
             self.swipe_interval = swipe_interval
             self._stop_event.clear()
-            self.log(f"Start requested. Target: {self.adb_target}, interval: {self.swipe_interval}s.")
+            self.log(f"Start requested. Targets: {', '.join(self.adb_targets)}, interval: {self.swipe_interval}s.")
             self._thread = threading.Thread(target=self._run, name="tikflow-worker", daemon=True)
             self._thread.start()
             return True
@@ -79,49 +105,75 @@ class TikFlow:
         return True
 
     def status(self):
+        with self._lock:
+            targets = list(self.adb_targets)
         return {
             "running": self.is_running(),
-            "adb_target": self.adb_target,
+            "adb_target": "\n".join(targets),
+            "adb_targets": targets,
             "interval": self.swipe_interval,
             "logs": self.get_logs(),
         }
 
-    def connect(self, adb_target=None):
-        adb_target = (adb_target or self.adb_target or DEFAULT_ADB_TARGET).strip()
-        if not adb_target:
-            raise ValueError("ADB target is required.")
+    def connect(self, adb_target=None, adb_targets=None):
+        targets = parse_adb_targets(adb_targets if adb_targets is not None else adb_target)
+        if not targets:
+            raise ValueError("At least one ADB target is required.")
 
         with self._lock:
-            self.adb_target = adb_target
+            self.adb_targets = targets
 
-        self._connect_adb()
+        self._connect_adb_targets()
 
     def _run_adb_command(self, command):
         with self._adb_lock:
             return subprocess.run(command, capture_output=True, check=True, timeout=ADB_COMMAND_TIMEOUT)
 
-    def _connect_adb(self):
-        self.log(f"Connecting to ADB at {self.adb_target}")
-        result = self._run_adb_command([ADB_COMMAND, "connect", self.adb_target])
+    def _connect_adb_target(self, target):
+        self.log(f"Connecting to ADB at {target}")
+        result = self._run_adb_command([ADB_COMMAND, "connect", target])
         output = result.stdout.decode(errors="replace").strip()
         if output:
             self.log(output)
 
-    def _swipe_next_video(self):
-        self._run_adb_command(SWIPE_COMMAND)
-        self.log("Swiped up")
+    def _connect_adb_targets(self):
+        failures = []
+        with self._lock:
+            targets = list(self.adb_targets)
+
+        for target in targets:
+            try:
+                self._connect_adb_target(target)
+            except subprocess.CalledProcessError as error:
+                stderr = error.stderr.decode(errors="replace").strip() if error.stderr else ""
+                failures.append(f"{target}: {stderr or error}")
+                self.log(f"ADB connect failed for {target}: {stderr or error}")
+
+        if failures and len(failures) == len(targets):
+            raise RuntimeError("All ADB connections failed: " + "; ".join(failures))
+
+    def _swipe_next_video(self, target):
+        self._run_adb_command([ADB_COMMAND, "-s", target, *SWIPE_ARGS])
+        self.log(f"Swiped up on {target}")
+
+    def _swipe_all_targets(self):
+        with self._lock:
+            targets = list(self.adb_targets)
+
+        for target in targets:
+            try:
+                self._swipe_next_video(target)
+            except subprocess.CalledProcessError as error:
+                stderr = error.stderr.decode(errors="replace").strip() if error.stderr else ""
+                self.log(f"Swipe failed for {target}: {stderr or error}")
 
     def _run(self):
         try:
-            self._connect_adb()
-            self.log(f"TikFlow started. Swiping every {self.swipe_interval}s.")
+            self._connect_adb_targets()
+            self.log(f"TikFlow started. Swiping {len(self.adb_targets)} target(s) every {self.swipe_interval}s.")
 
             while not self._stop_event.wait(self.swipe_interval):
-                try:
-                    self._swipe_next_video()
-                except subprocess.CalledProcessError as error:
-                    stderr = error.stderr.decode(errors="replace").strip() if error.stderr else ""
-                    self.log(f"Swipe failed: {stderr or error}")
+                self._swipe_all_targets()
         except FileNotFoundError:
             self.log("ADB command not found. Install Android platform-tools, add adb.exe to PATH, or place it in platform-tools\\adb.exe.")
         except subprocess.TimeoutExpired:
